@@ -622,24 +622,197 @@ devops/
 
 ### 11.1 CI/CD
 
-**CircleCI** (workout_backend):
+#### Option A: CircleCI (Current Setup)
+
+**workout_backend**:
 - Location: `.circleci/config.yml`
 - Triggers: On PR and push to main/develop
 - Jobs: Test, lint, build, security scan
 
-**GitHub Actions** (future):
+#### Option B: GitHub Actions (Recommended for Solo Devs)
+
+**Why GitHub Actions for Solo Development:**
+- ✅ Zero additional accounts/services to manage
+- ✅ Native GitHub integration
+- ✅ Generous free tier (2000 minutes/month)
+- ✅ Configuration lives in your repo (`.github/workflows/`)
+- ✅ Easy to customize and extend
+
+**workout_backend (.github/workflows/test-backend.yml)**:
 ```yaml
-# .github/workflows/test.yml
-name: Tests
-on: [push, pull_request]
+name: Backend Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workout_backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - uses: actions/checkout@v4
-      - run: npm install
-      - run: npm test
+      
+      - name: Setup Elixir
+        uses: actions/setup-elixir@v1
+        with:
+          elixir-version: 1.16
+          otp-version: 26
+          
+      - name: Install dependencies
+        run: |
+          mix local.rebar --force
+          mix local.hex --force
+          mix deps.get
+      
+      - name: Compile
+        run: mix compile --warnings-as-errors
+      
+      - name: Run tests
+        run: mix test
+        env:
+          MIX_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workout_backend_test
+      
+      - name: Lint
+        run: |
+          mix credo --strict
+          mix dialyzer
 ```
+
+**workout_frontend (.github/workflows/test-frontend.yml)**:
+```yaml
+name: Frontend Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Type check
+        run: npm run type-check
+      
+      - name: Lint
+        run: npm run lint
+      
+      - name: Run tests
+        run: npm test
+```
+
+**Combined Workflow (both repos in one file)**:
+```yaml
+name: Full Stack Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-elixir@v1
+        with:
+          elixir-version: 1.16
+          otp-version: 26
+      - run: mix deps.get && mix test
+
+  frontend:
+    needs: backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci && npm test
+```
+
+#### Option C: Local Scripts (Simplest for Solo)
+
+If you prefer no cloud CI at all, use a `Makefile`:
+
+**workout_backend/Makefile**:
+```makefile
+.PHONY: test lint setup
+
+setup: deps database
+
+deps:
+	mix deps.get
+
+database:
+	mix ecto.create
+	mix ecto.migrate
+
+test: deps
+	mix test
+
+lint: deps
+	mix credo --strict
+	dialyzer
+
+all: setup test lint
+```
+
+**workout_frontend/package.json scripts**:
+```json
+{
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "ci": "npm ci",
+    "validate": "npm run lint && npm run type-check && npm test"
+  }
+}
+```
+
+Run locally: `make test` or `npm run validate`
 
 ### 11.2 Local Development Tools
 
