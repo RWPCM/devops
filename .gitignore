@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies (if any)
+node_modules/
+deps/
+
+# Build artifacts
+_dist/
+build/
+tmp/
+
+# Credentials
+*.key
+*.pem
+*.p12
+*.jks
