@@ -1,0 +1,25 @@
+# ngrok Traffic Policy for the pre-production beta tunnel
+# (workoutcoach.ngrok.app -> localhost:4001)
+#
+# Gates the tunnel with a shared secret header instead of HTTP Basic Auth,
+# because Basic Auth would collide with the mobile app's own
+# `Authorization: Bearer <token>` header (HAP-170).
+#
+# Requests must include:
+#   X-Beta-Key: ca96a4623a5b298778e3a2a7a7ef2ac3
+#
+# This file is gitignored (lives under devops/, see root .gitignore) since it
+# contains the shared secret. Referenced from the ngrok launchd agent
+# (~/Library/LaunchAgents/com.hapteo.ngrok.preprod.plist) via
+# --traffic-policy-file.
+#
+# Source of truth for this value: BETA_GATE_KEY in .env.preprod (repo root).
+# See PREPROD_CONFIGURATION.md for the rotation procedure.
+
+on_http_request:
+  - expressions:
+      - "!('ca96a4623a5b298778e3a2a7a7ef2ac3' in getReqHeader('X-Beta-Key'))"
+    actions:
+      - type: deny
+        config:
+          status_code: 401

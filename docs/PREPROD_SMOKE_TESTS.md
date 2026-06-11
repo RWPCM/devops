@@ -8,6 +8,16 @@ These checks cover everything that doesn't require an EAS build on a physical
 device. Device-level checks (install, login UI, workout session, audio, voice
 commands, OTA update) are tracked separately and must be run manually.
 
+**Beta gate (HAP-170):** every request to `https://workoutcoach.ngrok.app`
+(except step 1, which is a raw TLS check) must include the
+`X-Beta-Key` header — see `devops/ngrok-preprod-policy.yml` for the secret.
+Without it, the ngrok edge returns `401` before the request reaches the
+backend.
+
+```bash
+BETA_KEY="<see devops/ngrok-preprod-policy.yml>"
+```
+
 ---
 
 ## 1. TLS certificate validity
@@ -31,6 +41,7 @@ Uses a seeded `*@beta.test` account (see `priv/repo/seeds/02_users.exs`).
 
 ```bash
 curl -sS -X POST https://workoutcoach.ngrok.app/api/mobile/auth/login \
+  -H "X-Beta-Key: $BETA_KEY" \
   -H "Content-Type: application/json" \
   -d '{"pin":"1111"}'
 ```
@@ -47,6 +58,7 @@ Use the `token` and `entry_url` from step 2.
 TOKEN="<token from step 2>"
 curl -sS -o /dev/null -w "GET /index.xml -> %{http_code}\n" \
   https://workoutcoach.ngrok.app/index.xml \
+  -H "X-Beta-Key: $BETA_KEY" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -67,14 +79,17 @@ launchctl list | grep workoutbackend   # expect a new PID
 curl -sS -o /dev/null -w "localhost after restart: %{http_code}\n" http://localhost:4001/
 ```
 
-Expected: a different PID than before, and `200` from the health check.
+Expected: a different PID than before, and `200` from the health check
+(localhost bypasses the ngrok gate, so no `X-Beta-Key` needed here).
 
 ---
 
 ## 5. Tunnel health after restart
 
 ```bash
-curl -sS -o /dev/null -w "tunnel: %{http_code}\n" https://workoutcoach.ngrok.app/
+curl -sS -o /dev/null -w "tunnel: %{http_code}\n" \
+  -H "X-Beta-Key: $BETA_KEY" \
+  https://workoutcoach.ngrok.app/
 ```
 
 Expected: `200`.
@@ -88,6 +103,7 @@ Expected: `200`.
 set -euo pipefail
 
 DOMAIN="workoutcoach.ngrok.app"
+BETA_KEY="<see devops/ngrok-preprod-policy.yml>"
 
 echo "--- 1. TLS certificate ---"
 echo | openssl s_client -connect "$DOMAIN:443" -servername "$DOMAIN" 2>/dev/null \
@@ -95,6 +111,7 @@ echo | openssl s_client -connect "$DOMAIN:443" -servername "$DOMAIN" 2>/dev/null
 
 echo "--- 2. PIN login ---"
 LOGIN_RESPONSE=$(curl -sS -X POST "https://$DOMAIN/api/mobile/auth/login" \
+  -H "X-Beta-Key: $BETA_KEY" \
   -H "Content-Type: application/json" \
   -d '{"pin":"1111"}')
 echo "$LOGIN_RESPONSE"
@@ -102,7 +119,9 @@ TOKEN=$(echo "$LOGIN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
 echo "--- 3. Authenticated screen fetch ---"
 curl -sS -o /dev/null -w "GET /index.xml -> %{http_code}\n" \
-  "https://$DOMAIN/index.xml" -H "Authorization: Bearer $TOKEN"
+  "https://$DOMAIN/index.xml" \
+  -H "X-Beta-Key: $BETA_KEY" \
+  -H "Authorization: Bearer $TOKEN"
 
 echo "--- 4. launchd crash recovery ---"
 PID=$(launchctl list | grep com.hapteo.workoutbackend.preprod | awk '{print $1}')
@@ -113,7 +132,7 @@ launchctl list | grep workoutbackend
 curl -sS -o /dev/null -w "localhost after restart: %{http_code}\n" http://localhost:4001/
 
 echo "--- 5. Tunnel health ---"
-curl -sS -o /dev/null -w "tunnel: %{http_code}\n" "https://$DOMAIN/"
+curl -sS -o /dev/null -w "tunnel: %{http_code}\n" -H "X-Beta-Key: $BETA_KEY" "https://$DOMAIN/"
 ```
 
 ---

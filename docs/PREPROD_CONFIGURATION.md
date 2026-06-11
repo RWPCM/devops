@@ -51,6 +51,41 @@ Domain `workoutcoach.ngrok.app` reserved on the ngrok dashboard
 (https://dashboard.ngrok.com/domains), free plan (account already authenticated
 via `~/Library/Application Support/ngrok/ngrok.yml`).
 
+#### Beta gate (HAP-170)
+
+The tunnel is publicly reachable, so it's gated with an ngrok Traffic Policy
+(`devops/ngrok-preprod-policy.yml`, gitignored — contains the shared secret).
+Every request must include the header:
+
+```
+X-Beta-Key: <secret, see devops/ngrok-preprod-policy.yml>
+```
+
+Requests without it get a `401` at the ngrok edge. A separate header (not
+`Authorization`) is used deliberately, since `Authorization: Bearer <token>`
+is already used by the mobile app's own login.
+
+The `workout_frontend` `beta` EAS profile sets `EXPO_PUBLIC_BETA_GATE_KEY`,
+which `apiClient.ts` and `hyperviewFetch.tsx` attach to every request
+automatically. CLI smoke tests must pass `-H "X-Beta-Key: ..."` manually
+(see `PREPROD_SMOKE_TESTS.md`).
+
+**Source of truth & rotation:** the value lives in `BETA_GATE_KEY` in
+`.env.preprod` (repo root, gitignored). To rotate:
+
+1. Generate a new value and update `BETA_GATE_KEY` in `.env.preprod`.
+2. Copy it into `devops/ngrok-preprod-policy.yml` (the `X-Beta-Key` check).
+3. Copy it into `workout_frontend/eas.json` (`beta.env.EXPO_PUBLIC_BETA_GATE_KEY`).
+4. Reload the ngrok agent:
+   ```bash
+   launchctl unload ~/Library/LaunchAgents/com.hapteo.ngrok.preprod.plist
+   launchctl load   ~/Library/LaunchAgents/com.hapteo.ngrok.preprod.plist
+   ```
+5. Publish the new value to existing beta installs:
+   ```bash
+   cd workout_frontend && eas update --channel beta --message "Rotate beta gate key"
+   ```
+
 ### 5. Release + launchd agents
 
 Build (after any code change):
