@@ -86,6 +86,27 @@ automatically. CLI smoke tests must pass `-H "X-Beta-Key: ..."` manually
    cd workout_frontend && eas update --channel beta --message "Rotate beta gate key"
    ```
 
+#### MCP admin token (HAP-174)
+
+`/mcp/admin` (data-access tools: `find_user`, `list_sessions`,
+`get_session_details`, `get_feedback_summary`, etc.) requires
+`Authorization: Bearer <MCP_ADMIN_TOKEN>`. If `MCP_ADMIN_TOKEN` is unset, the
+endpoint is **open** (with a warning logged) — so it must always be set in
+preprod.
+
+`MCP_ADMIN_TOKEN` is read via `System.get_env` at **request time**, so it's
+set directly in `~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist`
+(`EnvironmentVariables`), not via `.env.preprod` (which only applies to
+manually-sourced shell sessions, not the launchd-managed release).
+
+To rotate: generate a new value (`openssl rand -hex 24`), update the token in
+the plist's `EnvironmentVariables`, then:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
+launchctl load   ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
+```
+
 ### 5. Release + launchd agents
 
 Build (after any code change):
