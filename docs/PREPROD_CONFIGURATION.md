@@ -107,15 +107,45 @@ launchctl unload ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
 launchctl load   ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
 ```
 
+#### Gradium TTS (HAP-270)
+
+`GRADIUM_API_KEY`, `GRADIUM_TTS_VOICE_FR`, and `GRADIUM_TTS_VOICE_EN` (same
+API key as `gradium_stt`/STT) are read via `System.get_env` in
+`config/runtime.exs` at **boot time**, not baked into the release at build
+time — so, like `MCP_ADMIN_TOKEN`, they must be set directly in the plist's
+`EnvironmentVariables`, not via `.env.preprod`. If unset, cue/coach-chat TTS
+silently fails per-request (logged as a warning; the client falls back to
+device speech) rather than breaking the release.
+
+To rotate or add a voice: update the plist's `EnvironmentVariables`, then
+reload the agent as above (or run `devops/scripts/deploy_preprod.sh`, which
+reloads it as its last step regardless of whether the release itself
+changed).
+
 ### 5. Release + launchd agents
 
-Build (after any code change):
+Build and restart (after any code change):
+
+```bash
+devops/scripts/deploy_preprod.sh
+```
+
+This automates: sourcing `.env.local`/`.env.preprod`, `mix assets.deploy`,
+`mix release --overwrite`, and reloading the `workoutbackend.preprod`
+launchd agent so it picks up the new release binary. It does not manage
+plist-only secrets (see "MCP admin token" / "Gradium TTS" above) — edit
+those in the plist directly, then the script's reload step (or a manual
+`launchctl unload`/`load`) picks them up.
+
+Equivalent manual steps, if you need to run a piece in isolation:
 
 ```bash
 source .env.local && source .env.preprod
 cd workout_backend
 MIX_ENV=preprod mix assets.deploy
-MIX_ENV=preprod mix release
+MIX_ENV=preprod mix release --overwrite
+launchctl unload ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
+launchctl load   ~/Library/LaunchAgents/com.hapteo.workoutbackend.preprod.plist
 ```
 
 Two launchd agents (in `~/Library/LaunchAgents/`, not committed — created manually,
