@@ -10,6 +10,7 @@ Shared DevOps repository for the Hyperview ecosystem.
 
 ## Documentation
 
+- [Preproduction configuration and beta key rotation](docs/PREPROD_CONFIGURATION.md)
 - [SDLC Workflow](docs/sdlc.md) - Software Development Lifecycle (HAP-96)
 
 ## Quick Links

@@ -65,7 +65,7 @@ Requests without it get a `401` at the ngrok edge. A separate header (not
 `Authorization`) is used deliberately, since `Authorization: Bearer <token>`
 is already used by the mobile app's own login.
 
-The `workout_frontend` `beta` EAS profile sets `EXPO_PUBLIC_BETA_GATE_KEY`,
+The `workout_frontend` `beta` EAS profile selects the **preview** environment, which must define `EXPO_PUBLIC_BETA_GATE_KEY`,
 which `apiClient.ts` and `hyperviewFetch.tsx` attach to every request
 automatically. CLI smoke tests must pass `-H "X-Beta-Key: ..."` manually
 (see `PREPROD_SMOKE_TESTS.md`).
@@ -74,8 +74,8 @@ automatically. CLI smoke tests must pass `-H "X-Beta-Key: ..."` manually
 `.env.preprod` (repo root, gitignored). To rotate:
 
 1. Generate a new value and update `BETA_GATE_KEY` in `.env.preprod`.
-2. Copy it into `devops/ngrok-preprod-policy.yml` (the `X-Beta-Key` check).
-3. Copy it into `workout_frontend/eas.json` (`beta.env.EXPO_PUBLIC_BETA_GATE_KEY`).
+2. From the workspace root, run `python3 devops/scripts/render_ngrok_policy.py --env-file .env.preprod`. This atomically generates the ignored policy with mode `0600`; missing or invalid keys leave the existing policy untouched.
+3. Set `EXPO_PUBLIC_BETA_GATE_KEY` to the same value in the Expo project’s **preview** EAS environment (use sensitive visibility). The `beta` build profile selects this environment. For local Metro, set it in the ignored `workout_frontend/.env.local` and restart Metro. Never put the value in `eas.json`.
 4. Reload the ngrok agent:
    ```bash
    launchctl unload ~/Library/LaunchAgents/com.hapteo.ngrok.preprod.plist
@@ -83,7 +83,7 @@ automatically. CLI smoke tests must pass `-H "X-Beta-Key: ..."` manually
    ```
 5. Publish the new value to existing beta installs:
    ```bash
-   cd workout_frontend && eas update --channel beta --message "Rotate beta gate key"
+   cd workout_frontend && eas update --channel beta --message "Rotate beta gate key" --environment preview
    ```
 
 #### MCP admin token (HAP-174)
@@ -176,7 +176,7 @@ see plist contents below):
 ```bash
 eas build --platform android --profile beta
 eas build --platform ios --profile beta
-eas update --channel beta --message "..."
+eas update --channel beta --message "..." --environment preview
 ```
 
 ### 7. Seed data
@@ -235,3 +235,21 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://workoutcoach.ngrok.app/
   `pgrep -fl "ngrok http --url"` and kill the stray one.
 - **Tunnel up but 502/connection refused**: the backend release isn't running —
   check `launchctl list | grep workoutbackend` and `workout_backend/log/preprod.err.log`.
+
+### Beta gate security limits
+
+The beta key is distributed in client JavaScript and is only a coarse traffic gate.
+Per-user authentication and the separate MCP admin token remain required. Sensitive
+EAS visibility prevents accidental console display; it does not hide a public Expo
+variable from app recipients. Never reuse this key for admin access.
+
+The old policy and EAS value remain in Git history. Removing the current copies does
+not revoke them. Coordinate rotation, the tunnel restart, and the beta app update:
+old app builds lose access once the tunnel accepts only the new key. The generator
+never reloads ngrok or modifies EAS variables. EAS updates must select the preview
+environment explicitly (`--environment preview`) to use the matching key.
+
+Generate a replacement with `openssl rand -hex 32`, save it only in the ignored env
+file and EAS environment, then follow the rotation steps above. Do not paste it into
+chat, commits, or command-line arguments. After restarting the tunnel, verify that
+missing, incorrect, duplicate, and old keys are rejected and the new key succeeds.

@@ -31,3 +31,10 @@ tmp/
 *.pem
 *.p12
 *.jks
+
+# Local ngrok policy contains the beta gate key.
+/ngrok-preprod-policy.yml
+
+# Python policy tooling
+__pycache__/
+*.pyc
